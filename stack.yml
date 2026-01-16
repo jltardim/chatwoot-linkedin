@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  bridge:
+    build: .
+    image: chatwoot-linkedin-bridge:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      UVICORN_WORKERS: "2"
+    networks:
+      - traefik
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.bridge.rule=Host(`${BRIDGE_DOMAIN}`)"
+      - "traefik.http.routers.bridge.entrypoints=websecure"
+      - "traefik.http.routers.bridge.tls=true"
+      - "traefik.http.services.bridge.loadbalancer.server.port=8000"
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

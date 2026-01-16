@@ -1,0 +1,1031 @@
+{
+   "nodes": [
+       {
+           "parameters": {
+               "httpMethod": "POST",
+               "path": "linkedin_envia",
+               "responseMode": "lastNode",
+               "options": {}
+           },
+           "type": "n8n-nodes-base.webhook",
+           "typeVersion": 2.1,
+           "position": [
+               -256,
+               656
+           ],
+           "id": "6bcb488a-53fe-4f89-8a84-4e31d9f336db",
+           "name": "Webhook1",
+           "webhookId": "764b310f-8465-4016-a793-0e8e32ec08a1"
+       },
+       {
+           "parameters": {
+               "httpMethod": "POST",
+               "path": "linkedin_recebe",
+               "responseMode": "lastNode",
+               "options": {}
+           },
+           "type": "n8n-nodes-base.webhook",
+           "typeVersion": 2.1,
+           "position": [
+               -256,
+               -80
+           ],
+           "id": "b80a3ae7-cee9-44a2-ac55-9a0dcec3a1da",
+           "name": "Webhook",
+           "webhookId": "6d2ca2cd-7dc0-4a2e-a4ee-e926fc7042e3"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "={{ $json.url }}/api/v1/accounts/{{ $json.account_id }}/contacts ",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $json.access_token }}"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "specifyBody": "json",
+               "jsonBody": "={\n  \"inbox_id\": \"{{ $json.inbox_id }}\",\n  \"name\": \"{{ $('tratamento payload').item.json.data.attendees[0].attendee_name }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"custom_attributes\": {\n    \"chat_id\": \"{{ $('tratamento payload').item.json.data.chat_id }}\"\n  }\n}\n",
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               480,
+               -80
+           ],
+           "id": "18defa25-e4e0-4a52-bc81-017da4a52cf5",
+           "name": "criando contatos",
+           "alwaysOutputData": false,
+           "onError": "continueErrorOutput"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "={{ $('chatwoot_info').item.json.url }}/api/v1/accounts/{{ $('chatwoot_info').item.json.account_id }}/conversations",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $('chatwoot_info').item.json.access_token }}"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "bodyParameters": {
+                   "parameters": [
+                       {
+                           "name": "source_id",
+                           "value": "={{ $json.payload.contact.contact_inboxes[0].source_id }}"
+                       },
+                       {
+                           "name": "inbox_id",
+                           "value": "={{ $('chatwoot_info').item.json.inbox_id }}"
+                       },
+                       {
+                           "name": "contact_id",
+                           "value": "={{ $json.payload.contact.id }}"
+                       },
+                       {
+                           "name": "status",
+                           "value": "open"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               880,
+               -400
+           ],
+           "id": "933dd526-dc10-4a7c-9009-ebc67813c2e2",
+           "name": "criando conversas"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "={{ $('chatwoot_info').item.json.url }}/api/v1/accounts/{{ $('chatwoot_info').item.json.account_id }}/conversations/{{ $json.id }}/messages ",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $('chatwoot_info').item.json.access_token }}"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "bodyParameters": {
+                   "parameters": [
+                       {
+                           "name": "content",
+                           "value": "={{ $items(\"tratamento payload\")[0].json.data.message }}"
+                       },
+                       {
+                           "name": "message_type",
+                           "value": "incoming"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               1328,
+               -512
+           ],
+           "id": "1fa219da-50ed-4586-87ec-94f5af736c31",
+           "name": "criando msg"
+       },
+       {
+           "parameters": {
+               "assignments": {
+                   "assignments": [
+                       {
+                           "id": "6cc3171c-1ab4-47f7-9fd3-946f5111c1d7",
+                           "name": "body",
+                           "value": "={{ $json.body }}",
+                           "type": "string"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.set",
+           "typeVersion": 3.4,
+           "position": [
+               -80,
+               -80
+           ],
+           "id": "1b72efac-3084-4388-9b51-567bdb6d86ca",
+           "name": "normalizador payload"
+       },
+       {
+           "parameters": {
+               "jsCode": "/**\n * Parseia o body “embrulhado” vindo do Unipile/n8n e retorna um objeto JSON.\n * - Corrige 2 quebras comuns do seu exemplo:\n *   (1) occupation do sender com `... Restaurante \": \"\" , \" Combustível...`\n *   (2) provider_chat_id com `...XzEwMA\":\"=`\n * - Se não der pra parsear 100%, retorna um JSON parcial por regex.\n */\n\nfunction unwrapBodyString(s) {\n  if (typeof s !== \"string\") return \"\";\n\n  let out = s.trim();\n\n  // Remove aspas externas, se existirem\n  if (out.startsWith('\"') && out.endsWith('\"')) out = out.slice(1, -1);\n\n  // Desembrulha padrão: {\"{...}\"}\n  // Ex: {\"{\\\"event\\\":\\\"...\\\"}\"}  ->  {\"event\":\"...\"}\n  out = out.replace(/^\\s*\\{\\s*\"\\{/, \"{\");\n  out = out.replace(/\\}\"\\s*\\}\\s*$/, \"}\");\n\n  // Des-escape básico (vira um JSON “normal” em texto)\n  out = out.replace(/\\\\\"/g, '\"');\n\n  return out.trim();\n}\n\nfunction fixKnownBreaks(raw) {\n  let s = raw;\n\n  // (2) provider_chat_id quebrado:\n  // \"...\\\"provider_chat_id\\\":\\\"2-XXXX\\\":\\\"=\\\",...\"\n  // vira \"...\\\"provider_chat_id\\\":\\\"2-XXXX=\\\",...\"\n  s = s.replace(\n    /\"provider_chat_id\"\\s*:\\s*\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"\\s*,/g,\n    (_, part1, part2) => `\"provider_chat_id\":\"${part1}${part2}\",`\n  );\n\n  // (1) occupation do sender quebrado (padrão exato do seu payload):\n  // ...\"occupation\":\"... Restaurante \":\"\",\" Combustível... Seguro de Vida\",...\n  // vira occupation concatenada numa string só.\n  s = s.replace(\n    /\"occupation\"\\s*:\\s*\"([^\"]*?)\"\\s*:\\s*\"\"\\s*,\\s*\"([^\"]*?)\"\\s*,/g,\n    (_, a, b) => `\"occupation\":\"${a}${b}\",`\n  );\n\n  return s;\n}\n\nfunction safeJsonParse(str) {\n  try {\n    return { ok: true, value: JSON.parse(str) };\n  } catch (e) {\n    return { ok: false, error: e?.message || String(e) };\n  }\n}\n\nfunction fallbackExtract(raw) {\n  const pick = (key) => raw.match(new RegExp(`\"${key}\"\\\\s*:\\\\s*\"([^\"]*)\"`, \"i\"))?.[1] ?? null;\n\n  // tenta pegar sender_name de forma simples\n  const senderName = (() => {\n    const senderBlock = raw.match(/\"sender\"\\s*:\\s*\\{([\\s\\S]*?)\\}\\s*,\\s*\"subject\"/);\n    if (!senderBlock) return null;\n    return senderBlock[1].match(/\"attendee_name\"\\s*:\\s*\"([^\"]+)\"/)?.[1] ?? null;\n  })();\n\n  return {\n    ok: true,\n    parseMode: \"regex_fallback\",\n    event: pick(\"event\"),\n    timestamp: pick(\"timestamp\"),\n    account_id: pick(\"account_id\"),\n    account_type: pick(\"account_type\"),\n    chat_id: pick(\"chat_id\"),\n    message_id: pick(\"message_id\"),\n    provider_message_id: pick(\"provider_message_id\"),\n    message: pick(\"message\"),\n    sender_name: senderName,\n    raw_snippet: raw.slice(0, 600),\n  };\n}\n\n// ======= Exemplo de uso (no n8n, você recebe items) =======\nconst input = items; // no n8n Code node\n\nreturn input.map((it) => {\n  const bodyStr = it.json.body;\n\n  // 1) unwrap\n  let raw = unwrapBodyString(bodyStr);\n\n  // 2) tenta parse direto\n  let parsed = safeJsonParse(raw);\n  if (parsed.ok) return { json: { ok: true, parseMode: \"json\", data: parsed.value } };\n\n  // 3) corrige quebras e tenta de novo\n  raw = fixKnownBreaks(raw);\n  parsed = safeJsonParse(raw);\n  if (parsed.ok) return { json: { ok: true, parseMode: \"json_fixed\", data: parsed.value } };\n\n  // 4) fallback parcial por regex\n  return { json: fallbackExtract(raw) };\n});\n"
+           },
+           "type": "n8n-nodes-base.code",
+           "typeVersion": 2,
+           "position": [
+               112,
+               -80
+           ],
+           "id": "6b464bcd-bc2b-4dc6-bb4d-430704839d05",
+           "name": "tratamento payload"
+       },
+       {
+           "parameters": {
+               "assignments": {
+                   "assignments": [
+                       {
+                           "id": "a7ce84b8-3bc8-4c63-9aa4-3ad283b78b03",
+                           "name": "url",
+                           "value": "https://appchat01.favuka.com",
+                           "type": "string"
+                       },
+                       {
+                           "id": "3e9c0771-b778-4353-b278-cf12ff23228d",
+                           "name": "access_token",
+                           "value": "XaPb21pdeb3Jhyqd9wAkt16A",
+                           "type": "string"
+                       },
+                       {
+                           "id": "e07a864c-c237-4739-a093-ce37015a6f1b",
+                           "name": "inbox_id",
+                           "value": "108",
+                           "type": "string"
+                       },
+                       {
+                           "id": "c84ae1fe-7c89-4aa5-abe7-35777b25037b",
+                           "name": "account_id",
+                           "value": "29",
+                           "type": "string"
+                       },
+                       {
+                           "id": "25f73a82-dbde-47de-99c9-fa19111c7ad7",
+                           "name": "email",
+                           "value": "={{ $json.data.attendees[0].attendee_id + \"@gmail.com\"}}",
+                           "type": "string"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.set",
+           "typeVersion": 3.4,
+           "position": [
+               288,
+               -80
+           ],
+           "id": "7f0e042b-9b6d-4e92-aad1-a4756d261979",
+           "name": "chatwoot_info"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "={{ $('chatwoot_info').item.json.url + '/api/v1/accounts/' + $('chatwoot_info').item.json.account_id + '/contacts/filter' }}\n",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $json.access_token }}"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "specifyBody": "json",
+               "jsonBody": "={\n  \"payload\": [\n    {\n      \"attribute_key\": \"email\",\n      \"filter_operator\": \"equal_to\",\n      \"values\": [\"{{ $('chatwoot_info').item.json.email }}\"]\n    }\n  ]\n}\n",
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               640,
+               112
+           ],
+           "id": "b556dbd7-d225-4db5-b1cf-ff26c7144452",
+           "name": "filtra contato"
+       },
+       {
+           "parameters": {
+               "conditions": {
+                   "options": {
+                       "caseSensitive": true,
+                       "leftValue": "",
+                       "typeValidation": "strict",
+                       "version": 2
+                   },
+                   "conditions": [
+                       {
+                           "id": "17f025d5-276d-4d09-b54e-7876e89af9e4",
+                           "leftValue": "={{ $items(\"tratamento payload\")[0].json.data.is_sender }}",
+                           "rightValue": "",
+                           "operator": {
+                               "type": "boolean",
+                               "operation": "false",
+                               "singleValue": true
+                           }
+                       }
+                   ],
+                   "combinator": "and"
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.if",
+           "typeVersion": 2.2,
+           "position": [
+               1088,
+               -400
+           ],
+           "id": "df49c5c9-edcd-43aa-acc6-1bf43bad8885",
+           "name": "If"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "={{ $('chatwoot_info').item.json.url + '/api/v1/accounts/' + $('chatwoot_info').item.json.account_id + '/conversations/' + $json.payload[0].id + '/messages' }}\n",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $('chatwoot_info').item.json.access_token }}"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "bodyParameters": {
+                   "parameters": [
+                       {
+                           "name": "content",
+                           "value": "={{ \"\\u200BLI_ECHO\\u200B\" + $items(\"tratamento payload\")[0].json.data.message }}\n"
+                       },
+                       {
+                           "name": "message_type",
+                           "value": "outgoing"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               1328,
+               288
+           ],
+           "id": "ede32597-1931-48a7-975b-173ca37bd5cc",
+           "name": "criando outgoing"
+       },
+       {
+           "parameters": {
+               "url": "={{ $('chatwoot_info').item.json.url }}/api/v1/accounts/{{ $('chatwoot_info').item.json.account_id }}/contacts/{{ $json.payload[0].id }}/conversations\n",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $('chatwoot_info').item.json.access_token }}"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               816,
+               112
+           ],
+           "id": "b275b5cd-b75a-40a3-a708-5a3ae399572f",
+           "name": "filtra conversa contato"
+       },
+       {
+           "parameters": {
+               "conditions": {
+                   "options": {
+                       "caseSensitive": true,
+                       "leftValue": "",
+                       "typeValidation": "strict",
+                       "version": 2
+                   },
+                   "conditions": [
+                       {
+                           "id": "17f025d5-276d-4d09-b54e-7876e89af9e4",
+                           "leftValue": "={{ $items(\"tratamento payload\")[0].json.data.is_sender }}",
+                           "rightValue": "",
+                           "operator": {
+                               "type": "boolean",
+                               "operation": "false",
+                               "singleValue": true
+                           }
+                       }
+                   ],
+                   "combinator": "and"
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.if",
+           "typeVersion": 2.2,
+           "position": [
+               992,
+               112
+           ],
+           "id": "3e82721d-1797-4364-9ad8-9c471628f25c",
+           "name": "If1"
+       },
+       {
+           "parameters": {
+               "rules": {
+                   "values": [
+                       {
+                           "conditions": {
+                               "options": {
+                                   "caseSensitive": true,
+                                   "leftValue": "",
+                                   "typeValidation": "strict",
+                                   "version": 2
+                               },
+                               "conditions": [
+                                   {
+                                       "id": "9a56654e-8fc0-403f-a219-487d89a5c6a1",
+                                       "leftValue": "={{ $json.body.message_type }}",
+                                       "rightValue": "incoming",
+                                       "operator": {
+                                           "type": "string",
+                                           "operation": "equals",
+                                           "name": "filter.operator.equals"
+                                       }
+                                   }
+                               ],
+                               "combinator": "and"
+                           },
+                           "renameOutput": true,
+                           "outputKey": "msg incoming"
+                       },
+                       {
+                           "conditions": {
+                               "options": {
+                                   "caseSensitive": true,
+                                   "leftValue": "",
+                                   "typeValidation": "strict",
+                                   "version": 2
+                               },
+                               "conditions": [
+                                   {
+                                       "id": "9233dfa8-947d-4c48-a1ba-e8b57e7804fc",
+                                       "leftValue": "={{ $json.body.message_type }}",
+                                       "rightValue": "outgoing",
+                                       "operator": {
+                                           "type": "string",
+                                           "operation": "equals",
+                                           "name": "filter.operator.equals"
+                                       }
+                                   }
+                               ],
+                               "combinator": "and"
+                           },
+                           "renameOutput": true,
+                           "outputKey": "msg outgoing"
+                       }
+                   ]
+               },
+               "options": {
+                   "fallbackOutput": "extra"
+               }
+           },
+           "type": "n8n-nodes-base.switch",
+           "typeVersion": 3.3,
+           "position": [
+               240,
+               640
+           ],
+           "id": "a2e71af4-c402-47a9-8df7-e22d773a21cb",
+           "name": "filtro_evento"
+       },
+       {
+           "parameters": {},
+           "type": "n8n-nodes-base.noOp",
+           "typeVersion": 1,
+           "position": [
+               480,
+               480
+           ],
+           "id": "52d8c640-2138-4d6a-b191-f1235cfe53b8",
+           "name": "No Operation, do nothing"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "=https://api26.unipile.com:15609/api/v1/chats/{{ $json.body.conversation.meta.sender.custom_attributes.chat_id }}/messages",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "X-API-KEY",
+                           "value": "TgNfT6go.VGeQGzsL3wKeCWpzCBcXaNg6qCis7TAFTYz7uuvFtBU="
+                       },
+                       {
+                           "name": "accept",
+                           "value": "application/json"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "contentType": "multipart-form-data",
+               "bodyParameters": {
+                   "parameters": [
+                       {
+                           "name": "text",
+                           "value": "={{ ($json.body.content || \"\").replace(/\\u200BLI_ECHO\\u200B/g, \"\") }}"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               528,
+               720
+           ],
+           "id": "0dcb2657-edf7-47d0-b080-b03300588fbe",
+           "name": "envia_linkedin"
+       },
+       {
+           "parameters": {},
+           "type": "n8n-nodes-base.noOp",
+           "typeVersion": 1,
+           "position": [
+               1328,
+               -144
+           ],
+           "id": "0f088153-049b-4085-81b8-535efa1e5bcb",
+           "name": "No Operation, do nothing1"
+       },
+       {
+           "parameters": {
+               "content": "## Tratamento Payload Chatwoot\n",
+               "height": 496,
+               "width": 1024,
+               "color": 4
+           },
+           "type": "n8n-nodes-base.stickyNote",
+           "position": [
+               -272,
+               464
+           ],
+           "typeVersion": 1,
+           "id": "564dd1e5-f6cc-4578-a023-a44cd55b72c2",
+           "name": "Sticky Note2"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "={{ $('chatwoot_info').item.json.url + '/api/v1/accounts/' + $('chatwoot_info').item.json.account_id + '/conversations/' + $json.payload[0].id + '/messages' }}\n",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $('chatwoot_info').item.json.access_token }}"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "bodyParameters": {
+                   "parameters": [
+                       {
+                           "name": "content",
+                           "value": "={{ $items(\"tratamento payload\")[0].json.data.message }}"
+                       },
+                       {
+                           "name": "message_type",
+                           "value": "incoming"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               1328,
+               96
+           ],
+           "id": "abf3d23c-2d92-4273-aa8d-22782ca8556f",
+           "name": "criando msg2"
+       },
+       {
+           "parameters": {
+               "content": "## Tratamento payload Linkedin\n",
+               "height": 960,
+               "width": 2112,
+               "color": 5
+           },
+           "type": "n8n-nodes-base.stickyNote",
+           "position": [
+               -272,
+               -528
+           ],
+           "typeVersion": 1,
+           "id": "848af811-2f2b-49c2-8ea1-c84d3af40033",
+           "name": "Sticky Note4"
+       },
+       {
+           "parameters": {
+               "conditions": {
+                   "options": {
+                       "caseSensitive": true,
+                       "leftValue": "",
+                       "typeValidation": "strict",
+                       "version": 2
+                   },
+                   "conditions": [
+                       {
+                           "id": "add90763-f9d6-478b-a473-165d95ca0d4b",
+                           "leftValue": "={{ !$json.body?.content?.includes(\"\\u200BLI_ECHO\\u200B\") }}",
+                           "rightValue": "",
+                           "operator": {
+                               "type": "boolean",
+                               "operation": "true",
+                               "singleValue": true
+                           }
+                       }
+                   ],
+                   "combinator": "and"
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.if",
+           "typeVersion": 2.2,
+           "position": [
+               -64,
+               656
+           ],
+           "id": "9e0eb14e-57ea-45a1-ab60-43b7f884065a",
+           "name": "If2"
+       },
+       {
+           "parameters": {
+               "method": "POST",
+               "url": "={{ $('chatwoot_info').item.json.url }}/api/v1/accounts/{{ $('chatwoot_info').item.json.account_id }}/conversations/{{$json.payload[0].id}}/messages ",
+               "sendHeaders": true,
+               "headerParameters": {
+                   "parameters": [
+                       {
+                           "name": "api_access_token",
+                           "value": "={{ $('chatwoot_info').item.json.access_token }}"
+                       }
+                   ]
+               },
+               "sendBody": true,
+               "bodyParameters": {
+                   "parameters": [
+                       {
+                           "name": "content",
+                           "value": "={{ \"\\u200BLI_ECHO\\u200B\" + $items(\"tratamento payload\")[0].json.data.message }}"
+                       },
+                       {
+                           "name": "message_type",
+                           "value": "outgoing"
+                       }
+                   ]
+               },
+               "options": {}
+           },
+           "type": "n8n-nodes-base.httpRequest",
+           "typeVersion": 4.2,
+           "position": [
+               1328,
+               -320
+           ],
+           "id": "caba850b-bcae-46ec-acc2-ad552921f7e2",
+           "name": "criando outgoing2"
+       }
+   ],
+   "connections": {
+       "Webhook1": {
+           "main": [
+               [
+                   {
+                       "node": "If2",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "Webhook": {
+           "main": [
+               [
+                   {
+                       "node": "normalizador payload",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "criando contatos": {
+           "main": [
+               [
+                   {
+                       "node": "criando conversas",
+                       "type": "main",
+                       "index": 0
+                   }
+               ],
+               [
+                   {
+                       "node": "filtra contato",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "criando conversas": {
+           "main": [
+               [
+                   {
+                       "node": "If",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "criando msg": {
+           "main": [
+               []
+           ]
+       },
+       "normalizador payload": {
+           "main": [
+               [
+                   {
+                       "node": "tratamento payload",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "tratamento payload": {
+           "main": [
+               [
+                   {
+                       "node": "chatwoot_info",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "chatwoot_info": {
+           "main": [
+               [
+                   {
+                       "node": "criando contatos",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "filtra contato": {
+           "main": [
+               [
+                   {
+                       "node": "filtra conversa contato",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "If": {
+           "main": [
+               [
+                   {
+                       "node": "criando msg",
+                       "type": "main",
+                       "index": 0
+                   }
+               ],
+               [
+                   {
+                       "node": "criando outgoing2",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "filtra conversa contato": {
+           "main": [
+               [
+                   {
+                       "node": "If1",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "If1": {
+           "main": [
+               [
+                   {
+                       "node": "criando msg2",
+                       "type": "main",
+                       "index": 0
+                   }
+               ],
+               [
+                   {
+                       "node": "criando outgoing",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "filtro_evento": {
+           "main": [
+               [
+                   {
+                       "node": "No Operation, do nothing",
+                       "type": "main",
+                       "index": 0
+                   }
+               ],
+               [
+                   {
+                       "node": "envia_linkedin",
+                       "type": "main",
+                       "index": 0
+                   }
+               ],
+               [
+                   {
+                       "node": "No Operation, do nothing",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       },
+       "If2": {
+           "main": [
+               [
+                   {
+                       "node": "filtro_evento",
+                       "type": "main",
+                       "index": 0
+                   }
+               ],
+               [
+                   {
+                       "node": "No Operation, do nothing",
+                       "type": "main",
+                       "index": 0
+                   }
+               ]
+           ]
+       }
+   },
+   "pinData": {
+       "Webhook1": [
+           {
+               "headers": {
+                   "host": "n8nwebhooksclientes01.favuka.com",
+                   "user-agent": "rest-client/2.1.0 (linux-musl x86_64) ruby/3.4.4p34",
+                   "content-length": "2433",
+                   "accept": "application/json",
+                   "accept-encoding": "gzip;q=1.0,deflate;q=0.6,identity;q=0.3",
+                   "content-type": "application/json",
+                   "x-forwarded-for": "5.161.114.106",
+                   "x-forwarded-host": "n8nwebhooksclientes01.favuka.com",
+                   "x-forwarded-port": "443",
+                   "x-forwarded-proto": "https",
+                   "x-forwarded-server": "traefik_traefik.1",
+                   "x-real-ip": "5.161.114.106"
+               },
+               "params": {},
+               "query": {},
+               "body": {
+                   "account": {
+                       "id": 29,
+                       "name": "00ecardes"
+                   },
+                   "additional_attributes": {},
+                   "status": "sent",
+                   "content_attributes": {},
+                   "content_type": "text",
+                   "content": "teste",
+                   "conversation": {
+                       "additional_attributes": {},
+                       "can_reply": true,
+                       "channel": "Channel::Api",
+                       "contact_inbox": {
+                           "id": 15280,
+                           "contact_id": 22687,
+                           "inbox_id": 108,
+                           "source_id": "f3ed3f68-b4ba-435d-955f-85cfd9b8b0c9",
+                           "created_at": "2026-01-14T14:34:45.850Z",
+                           "updated_at": "2026-01-14T14:34:45.850Z",
+                           "hmac_verified": false,
+                           "pubsub_token": "JHKGRVXhPBejnDf78hQVmGZ8"
+                       },
+                       "id": 44,
+                       "inbox_id": 108,
+                       "messages": [
+                           {
+                               "id": 491023,
+                               "content": "teste",
+                               "account_id": 29,
+                               "inbox_id": 108,
+                               "conversation_id": 44,
+                               "message_type": 1,
+                               "created_at": 1768401320,
+                               "updated_at": "2026-01-14T14:35:20.114Z",
+                               "private": false,
+                               "status": "sent",
+                               "source_id": null,
+                               "content_type": "text",
+                               "content_attributes": {},
+                               "sender_type": "User",
+                               "sender_id": 53,
+                               "external_source_ids": {},
+                               "additional_attributes": {},
+                               "processed_message_content": "teste",
+                               "sentiment": {},
+                               "conversation": {
+                                   "assignee_id": 53,
+                                   "unread_count": 0,
+                                   "last_activity_at": 1768401320,
+                                   "contact_inbox": {
+                                       "source_id": "f3ed3f68-b4ba-435d-955f-85cfd9b8b0c9"
+                                   }
+                               },
+                               "sender": {
+                                   "id": 53,
+                                   "name": "Ecardes",
+                                   "available_name": "Admin-ecardes",
+                                   "avatar_url": "",
+                                   "type": "user",
+                                   "availability_status": null,
+                                   "thumbnail": ""
+                               }
+                           }
+                       ],
+                       "labels": [],
+                       "meta": {
+                           "sender": {
+                               "additional_attributes": {
+                                   "avatar_url_hash": "5c5af7271faca7d41f8869f6960476fe66fe23a91f87350f43033b9eda9ca478",
+                                   "last_avatar_sync_at": "2026-01-14T14:35:17Z"
+                               },
+                               "custom_attributes": {
+                                   "chat_id": "1Mha-KY4UaGmFPHDm1a7RQ"
+                               },
+                               "email": "rcveq8w3xvsfa5wbo5nrfa@gmail.com",
+                               "id": 22687,
+                               "identifier": null,
+                               "name": "João Lucas Moreira Tardim",
+                               "phone_number": null,
+                               "thumbnail": "",
+                               "blocked": false,
+                               "type": "contact"
+                           },
+                           "assignee": {
+                               "id": 53,
+                               "name": "Ecardes",
+                               "available_name": "Admin-ecardes",
+                               "avatar_url": "",
+                               "type": "user",
+                               "availability_status": null,
+                               "thumbnail": ""
+                           },
+                           "assignee_type": "User",
+                           "team": null,
+                           "hmac_verified": false
+                       },
+                       "status": "open",
+                       "custom_attributes": {},
+                       "snoozed_until": null,
+                       "unread_count": 0,
+                       "first_reply_created_at": "2026-01-14T14:34:47.059Z",
+                       "priority": null,
+                       "waiting_since": 0,
+                       "agent_last_seen_at": 1768401320,
+                       "contact_last_seen_at": 0,
+                       "last_activity_at": 1768401320,
+                       "timestamp": 1768401320,
+                       "created_at": 1768401286,
+                       "updated_at": 1768401320.117517
+                   },
+                   "created_at": "2026-01-14T14:35:20.114Z",
+                   "id": 491023,
+                   "inbox": {
+                       "id": 108,
+                       "name": "linkedin"
+                   },
+                   "message_type": "outgoing",
+                   "private": false,
+                   "sender": {
+                       "id": 53,
+                       "name": "Ecardes",
+                       "email": "admin-00ecardes@jftecnologia.com",
+                       "type": "user"
+                   },
+                   "source_id": null,
+                   "event": "message_created"
+               },
+               "webhookUrl": "https://n8nwebhooksclientes01.favuka.com/webhook/linkedin_envia",
+               "executionMode": "production"
+           }
+       ],
+       "Webhook": [
+           {
+               "headers": {
+                   "host": "n8nwebhooksclientes01.favuka.com",
+                   "user-agent": "axios/1.7.7",
+                   "content-length": "2012",
+                   "accept": "application/json, text/plain, */*",
+                   "accept-encoding": "gzip, compress, deflate, br",
+                   "content-type": "application/x-www-form-urlencoded",
+                   "x-forwarded-for": "51.159.14.116",
+                   "x-forwarded-host": "n8nwebhooksclientes01.favuka.com",
+                   "x-forwarded-port": "443",
+                   "x-forwarded-proto": "https",
+                   "x-forwarded-server": "traefik_traefik.1",
+                   "x-real-ip": "51.159.14.116"
+               },
+               "params": {},
+               "query": {},
+               "body": {
+                   "{\"event\":\"message_received\",\"account_id\":\"e-US80WlRTWVy2V_JwPG6Q\",\"account_type\":\"LINKEDIN\",\"account_info\":{\"type\":\"LINKEDIN\",\"feature\":\"classic\",\"user_id\":\"ACoAADa2bHAB_hWw6xDJ0W-7es9ybGDI3L3btS8\"},\"webhook_name\":\"\",\"chat_id\":\"1Mha-KY4UaGmFPHDm1a7RQ\",\"attendees\":[{\"attendee_id\":\"RcVEq8W3XVSFa5wbO5nRfA\",\"attendee_provider_id\":\"ACoAAE8rjhYBDCWsRHZ9sjVI4EKmaoAwyIHB6v8\",\"attendee_name\":\"João Lucas Moreira Tardim\",\"attendee_profile_url\":\"https://www.linkedin.com/in/ACoAAE8rjhYBDCWsRHZ9sjVI4EKmaoAwyIHB6v8\",\"attendee_specifics\":{\"provider\":\"LINKEDIN\",\"member_urn\":\"urn:li:member:1328254486\",\"occupation\":\"AI Engineer | Software Engineer | AI Agents | RAG | Prompt Engineer | N8N | Javascript | Typescript | Python | FastAPI | LangChain | Docker | LLMs | SQL |\",\"is_company\":false,\"network_distance\":\"DISTANCE_1\"},\"attendee_public_identifier\":null}],\"sender\":{\"attendee_id\":\"imM03TWRWkiVDAFfgewvrw\",\"attendee_provider_id\":\"ACoAADa2bHAB_hWw6xDJ0W-7es9ybGDI3L3btS8\",\"attendee_name\":\"Sany Delana,  Diretora Ecardes\",\"attendee_profile_url\":\"https://www.linkedin.com/in/ACoAADa2bHAB_hWw6xDJ0W-7es9ybGDI3L3btS8\",\"attendee_specifics\":{\"provider\":\"LINKEDIN\",\"member_urn\":\"urn:li:member:917924976\",\"occupation\":\"Diretora Comercial | Ecardes Consultoria e Gestão de Benefícios | Representante Exclusiva Ticket Serviços Brasil – Soluções em Alimentação, Restaurante ": "",
+                   " Combustível/Frota I Plano de Saúde, odontológico e Seguro de Vida\",\"is_company\":false,\"network_distance\":\"SELF\"},\"attendee_public_identifier\":null},\"subject\":null,\"message\":\"teste\\n\",\"message_id\":\"Z5FbK7GaWIGpaBj_9NpDKw\",\"timestamp\":\"2026-01-14T16:56:22.597Z\",\"attachments\":[],\"is_sender\":true,\"provider_chat_id\":\"2-ZTA5NGVhNWMtNDZlMC00Nzk3LWFiNTUtMGNkYmU1OGY4NzE0XzEwMA": "=\",\"provider_message_id\":\"2-MTc2ODQwOTc4MjU5N2IxNDQzNy0xMDAmZTA5NGVhNWMtNDZlMC00Nzk3LWFiNTUtMGNkYmU1OGY4NzE0XzEwMA==\",\"is_event\":0,\"chat_pinned\":0,\"quoted\":null,\"chat_content_type\":null,\"message_type\":\"MESSAGE\",\"is_group\":false,\"folder\":[\"INBOX\",\"INBOX_LINKEDIN_CLASSIC\"]}"
+               },
+               "webhookUrl": "https://n8nwebhooksclientes01.favuka.com/webhook/linkedin_recebe",
+               "executionMode": "production"
+           }
+       ]
+   },
+   "meta": {
+       "instanceId": "3efe800c9d279e7e02e48a2db60258cbb1dc96c7e0482ac3349122feb1264e30"
+   }
+}
+
